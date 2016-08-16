@@ -75,7 +75,7 @@ Begin["`Private`"];
 
 
 (*If[Length@Position[$Path,#]\[Equal]0,AppendTo[$Path,#]]&@"C:\\Users\\lk\\Documents\\docs\\coding\\mathematica";*)
-Needs["variousUtilities`"]
+Needs["utilities`"]
 Needs["PermanentCode`"]
 
 
