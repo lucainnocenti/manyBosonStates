@@ -1,11 +1,18 @@
 (* ::Package:: *)
 
+(* Abort for old, unsupported versions of Mathematica *)
+If[$VersionNumber < 10,
+  Print["manyBosonStates requires Mathematica 10.0 or later."];
+  Abort[]
+];
+
 x_\[CirclePlus]y_ := Mod[x + y, 2];
 
 
 BeginPackage["manyBosonStates`"];
 
-Unprotect /@ Names["manyBosonStates`*"];
+Unprotect @@ Names["manyBosonStates`*"];
+ClearAll @@ Names["manyBosonStates`*"];
 
 mol::usage = "mol[{list}] represents a quantum many-body state expressed as a Mode Occupation List, with the i-th element of list representing the number of bosons in the i-th mode.";
 mal::usage = "mal[{list},m] represents a quantum many-body state expressed as a Mode Assignment List, with the i-th element of list representing the mode occupied by the i-th photons, and with m being the total number of modes available to each boson.";
@@ -22,7 +29,9 @@ toMAL::usage = "toMAL[state] returns state expressed as a Mode Assignment List, 
 The general form of this output will thus be mal[listOfModes,numberOfModes].";
 toBM::usage = "toBM[state] returns state in BinaryMatrix form, wrapped in the Head bm.";
 toSameForm::usage = "toSameForm[modelState,stateToFormat] returns stateToFormat converted in the same form of modelState.";
+
 manyBodyStateQ::usage = "manyBosonStateQ[state] returns True if state is a recognized many-body state.";
+
 listCFMOLs::usage = "listCFMOLs[m,n] returns the set of collision-free many-body states of n bosons in m modes as Mode Occupation Lists.";
 listMOLs::usage = "listMOLs[m,n] returns the set of many-body states of n bosons in m modes as Mode Occupation Lists.";
 randomCFMOL::usage = "randomCFMOL[m,n] returns a randomly chosen collision-free many-body state of n bosons in m modes, as a Mode Occupation List.";
@@ -44,7 +53,6 @@ Available options:
   outputStates -> (\"collisionFree\" | \"nonCollisionFree\" | \"all\"), specifies which input/output combinations to output;
   monitor -> (True | False), specifies whether to print a progress bar monitoring the progress.";
 niceForm::usage = "niceForm[matrix] returns a formatted and coloured version of the input given matrix, for display purpuses.";
-randomUnitary::usage = "randomUnitary[m] returns an mxm Haar-random unitary matrix.";
 
 
 mal::wrongNumberOfModes = "The number of modes is incompatible with the given list of modes.";
@@ -86,16 +94,16 @@ Attributes[mal] = {Protected};
 Attributes[bm] = {Protected};
 
 
-nOfPhotons[mol[occupationNumbers_]] := Total@occupationNumbers
-nOfPhotons[occupationNumbers : {__Integer}] := nOfPhotons@mol@occupationNumbers
-nOfPhotons[mal[listOfModes_, numberOfModes_]] := Length@listOfModes
-nOfPhotons[bm[matrix_]] := Length@matrix
-nOfPhotons[matrix : {{__Integer?(# == 0 || # == 1&)}..}] := nOfPhotons@bm@matrix
-nOfModes[mol[occupationNumbers_]] := Length@occupationNumbers
-nOfModes[occupationNumbers : {__Integer}] := nOfModes@mol@occupationNumbers
-nOfModes[mal[listOfModes_, numberOfModes_]] := numberOfModes
-nOfModes[bm[matrix_]] := Log[2, Length@Transpose@matrix]
-nOfModes[matrix : {{__Integer?(# == 0 || # == 1&)}..}] := nOfModes@bm@matrix
+nOfPhotons[mol[occupationNumbers_]] := Total@occupationNumbers;
+nOfPhotons[occupationNumbers : {__Integer}] := nOfPhotons@mol@occupationNumbers;
+nOfPhotons[mal[listOfModes_, _]] := Length@listOfModes;
+nOfPhotons[bm[matrix_]] := Length@matrix;
+nOfPhotons[matrix : {{__Integer?(# == 0 || # == 1&)}..}] := nOfPhotons@bm@matrix;
+nOfModes[mol[occupationNumbers_]] := Length@occupationNumbers;
+nOfModes[occupationNumbers : {__Integer}] := nOfModes@mol@occupationNumbers;
+nOfModes[mal[_, numberOfModes_]] := numberOfModes;
+nOfModes[bm[matrix_]] := Log[2, Length@Transpose@matrix];
+nOfModes[matrix : {{__Integer?(# == 0 || # == 1&)}..}] := nOfModes@bm@matrix;
 
 
 convertMOLtoMAL[mol_List] := Do[
@@ -117,8 +125,11 @@ convertMALtoBM[inputMAL_mal] := Which[
   Length@inputMAL == 2, convertMALtoBM[First@inputMAL, Last@inputMAL],
   Length@inputMAL == 1, convertMALtoBM[First@inputMAL, Max@inputMAL]
 ];
-convertMOLtoBM[inputMOL : {__Integer}] := PadLeft[IntegerDigits[# - 1, 2], Log[2, Length@inputMOL]]& /@ Flatten@Position[inputMOL, 1]
+
+(*convertMOLtoBM[inputMOL : {__Integer}] := PadLeft[IntegerDigits[# - 1, 2], Log[2, Length@inputMOL]]& /@ Flatten@Position[inputMOL, 1];*)
+convertMOLtoBM[inputMOL : {__Integer}] := convertMALtoBM[convertMOLtoMAL[inputMOL], Length @ inputMOL];
 (*convertMOLtoBM[inputMOL_mol]:=convertMOLtoBM[First@inputMOL]*)
+
 convertBMtoMAL[inputBinaryMatrix : {{__Integer}..}] := 1 + FromDigits[#, 2]& /@ inputBinaryMatrix // Sort
 (*convertBMtoMAL[inputBM_bm]:=convertBMtoMAL[First@inputBM]*)
 convertBMtoMOL[inputBinaryMatrix : {{__Integer}..}] := convertMALtoMOL[convertBMtoMAL@inputBinaryMatrix, 2^Length@Transpose@inputBinaryMatrix]
@@ -128,25 +139,28 @@ toMAL::wrongHead = "The allowed Heads are List, mol, mal, bm.";
 toBM::wrongHead = "The allowed Heads are List, mol, mal, bm.";
 toMOL::wrongHead = "The allowed Heads are List, mol, mal, bm.";
 
-toMOL[inputState : {__Integer}] := mol@inputState
-toMOL[inputState : {{__Integer?(# == 0 || # == 1&)}..}] := mol@convertBMtoMOL@inputState
-toMOL[inputState_mol] := inputState
-toMOL[inputState : {__Integer}, numberOfModes_Integer] := mol@convertMALtoMOL[inputState, numberOfModes]
-toMOL[inputState_mal] := convertMALtoMOL[inputState] // mol
-toMOL[inputState_bm] := convertBMtoMOL[inputState] // mol
-toMOL[inputState_] := Message[toMOL::wrongHead]
-toMAL[inputState : {__Integer}] := mal[convertMOLtoMAL@inputState, Length@inputState]
-toMAL[inputState : {{__Integer?(# == 0 || # == 1&)}..}] := toMAL[bm@inputState]
-toMAL[inputState_mol] := toMAL[First@inputState]
-toMAL[inputState_mal] := inputState
+toMOL[inputState : {__Integer}] := mol@inputState;
+toMOL[inputState : {{__Integer?(# == 0 || # == 1&)}..}] := mol@convertBMtoMOL@inputState;
+toMOL[inputState_mol] := inputState;
+toMOL[inputState : {__Integer}, numberOfModes_Integer] := mol@convertMALtoMOL[inputState, numberOfModes];
+toMOL[inputState_mal] := convertMALtoMOL[inputState] // mol;
+toMOL[inputState_bm] := convertBMtoMOL[inputState] // mol;
+toMOL[_] := Message[toMOL::wrongHead];
+
+toMAL[inputState : {__Integer}] := mal[convertMOLtoMAL@inputState, Length@inputState];
+toMAL[inputState : {{__Integer?(# == 0 || # == 1&)}..}] := toMAL[bm@inputState];
+toMAL[inputState_mol] := toMAL[First@inputState];
+toMAL[inputState_mal] := inputState;
 toMAL[inputState_bm] := mal[convertBMtoMAL[inputState], 2^Length@Transpose@First@inputState];
-toMAL[inputState_] := Message[toMAL::wrongHead];
+toMAL[_] := Message[toMAL::wrongHead];
+
 toBM[inputState : {__Integer}] := bm@convertMOLtoBM@inputState;
 toBM[inputState : {{__Integer?(# == 0 || # == 1&)}..}] := toBM[bm@inputState];
 toBM[inputState_mol] := toBM[First@inputState];
 toBM[inputState_mal] := bm@convertMALtoBM@inputState;
 toBM[inputState_bm] := inputState;
-toBM[inputState_] := Message[toBM::wrongHead];
+toBM[_] := Message[toBM::wrongHead];
+
 SyntaxInformation[toSameForm] = {"ArgumentsPatterns" -> {_, _}};
 toSameForm[modelState_?manyBodyStateQ, stateToFormat_?manyBodyStateQ] := Which[
   modeOccupationListQ@modelState, If[Head@modelState === mol, toMOL@stateToFormat, First@toMOL@stateToFormat],
@@ -215,20 +229,49 @@ listMOLs[m_Integer, n_Integer, OptionsPattern[]] := Function[out,
 
 
 SyntaxInformation[scatteringAmplitude] = {"ArgumentsPattern" -> {_, _, _}};
-scatteringAmplitude[inputState_?manyBodyStateQ, outputState_?manyBodyStateQ, unitaryMatrix_List] := With[
+
+scatteringAmplitude[
+  inputState_?manyBodyStateQ,
+  outputState_?manyBodyStateQ,
+  unitaryMatrix_List
+] := With[
   {inputMAL = First@toMAL@inputState,
     outputMAL = First@toMAL@outputState,
     inputMOL = First@toMOL@inputState,
     outputMOL = First@toMOL@outputState},
-  Permanent[Table[
-    unitaryMatrix[[inputMAL[[i]], outputMAL[[j]]]],
-    {i, Length@inputMAL}, {j, Length@inputMAL}
-  ]] / Sqrt[Times @@ Factorial@inputMOL] / Sqrt[Times @@ Factorial@outputMOL]
+  Permanent[
+    Table[
+      unitaryMatrix[[inputMAL[[i]], outputMAL[[j]]]],
+      {i, Length@inputMAL}, {j, Length@inputMAL}
+    ]
+  ] / Sqrt[Times @@ Factorial @ inputMOL] / Sqrt[Times @@ Factorial @ outputMOL]
 ];
-scatteringAmplitude[inputState_, outputState_, unitaryMatrix : (_Symbol | _Function)] :=
-    scatteringAmplitude[inputState, outputState, unitaryMatrix] = scatteringAmplitude[inputState, outputState, unitaryMatrix[Length@First@toMOL@inputState]]
+
+scatteringAmplitude[
+  inputState_,
+  outputState_,
+  unitaryMatrix_
+] := scatteringAmplitude[inputState, outputState, unitaryMatrix[nOfModes @ inputState]];
+
+(*
+scatteringAmplitude[
+  inputState_,
+  outputState_,
+  unitaryMatrix : (_Symbol | _Function)
+] := scatteringAmplitude[
+  inputState,
+  outputState,
+  unitaryMatrix
+] = scatteringAmplitude[
+  inputState,
+  outputState,
+  unitaryMatrix[nOfModes @ inputState]
+];
+*)
+
 SyntaxInformation[scatteringAmplitudeNoMem] = {"ArgumentsPattern" -> {_, _, _}};
 scatteringAmplitudeNoMem[inputState_, outputState_, unitaryMatrix : (_Symbol | _Function)] := scatteringAmplitude[inputState, outputState, unitaryMatrix[Length@First@toMOL@inputState]]
+
 
 SyntaxInformation[scatteringProbability] = {"ArgumentsPattern" -> {_, _, _}};
 scatteringProbability[inputMOL_, outputMOL_, unitaryMatrix_] := Abs[scatteringAmplitude[inputMOL, outputMOL, unitaryMatrix]]^2
@@ -267,17 +310,22 @@ evolveManyBodyState[inputState_?manyBodyStateQ, unitaryMatrix : (_Symbol | _Func
 
 Options[suppressedQ] = {memoize -> True, supprThreshold -> 0};
 SyntaxInformation[suppressedQ] = {"ArgumentsPattern", {_, _, _, OptionsPattern[]}};
-suppressedQ[inputState_?manyBodyStateQ, outputState_?manyBodyStateQ, unitaryEvolution : (_List | _Symbol | _Function), opts : OptionsPattern[]] := If[OptionValue@supprThreshold == 0,
-  If[TrueQ@OptionValue@memoize,
-    Chop@N@scatteringAmplitude[inputState, outputState, unitaryEvolution] == 0,
-    Chop@N@scatteringAmplitudeNoMem[inputState, outputState, unitaryEvolution] == 0
+suppressedQ[
+  inputState_?manyBodyStateQ,
+  outputState_?manyBodyStateQ,
+  unitaryEvolution : (_List | _Symbol | _Function),
+  opts : OptionsPattern[]
+] := If[OptionValue@supprThreshold == 0,
+  If[TrueQ @ OptionValue @ memoize,
+    Chop @ N @ scatteringAmplitude[inputState, outputState, unitaryEvolution] == 0,
+    Chop @ N @ scatteringAmplitudeNoMem[inputState, outputState, unitaryEvolution] == 0
   ],
-(* else, if supprThreshold is not equal to zero (but it should greater), *)
-  If[TrueQ@OptionValue@memoize,
-    Chop@Abs@N@scatteringAmplitude[inputState, outputState, unitaryEvolution] <= OptionValue@supprThreshold,
-    Chop@Abs@N@scatteringAmplitudeNoMem[inputState, outputState, unitaryEvolution] <= OptionValue@supprThreshold
+(* else, if supprThreshold is not equal to zero (but it should be greater), *)
+  If[TrueQ @ OptionValue @ memoize,
+    Chop @ Abs @ N @ scatteringAmplitude[inputState, outputState, unitaryEvolution] <= OptionValue@supprThreshold,
+    Chop @ Abs @ N @ scatteringAmplitudeNoMem[inputState, outputState, unitaryEvolution] <= OptionValue@supprThreshold
   ]
-]
+];
 
 
 Options[suppressedOutputsCount] = {method -> "exact", nSamples -> 1000, outputStates -> "collisionFree", monitor -> False};
@@ -389,12 +437,7 @@ scattershotSamplingSuppressionRate[m_Integer, n_Integer, unitaryEvolution : (_Sy
     Subsets[listCFMOLs[m, n], {2}],
     suppressedQ[#[[1]], #[[2]], unitaryEvolution, FilterRules[{opts}, Options[suppressedQ]]]&
   ]] / Binomial[m, n]^2
-]
-
-
-randomUnitary[m_] := Orthogonalize[
-  Map[#[[1]] + I #[[2]]&, #, {2}]&@RandomReal[NormalDistribution[0, 1], {m, m, 2}]
-]
+];
 
 
 Options[manyBosonMatrix] = {outputStates -> "all", sortBy -> "default", monitor -> False};
