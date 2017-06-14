@@ -84,21 +84,37 @@ bm /: MatrixForm[bm[l_List]] := MatrixForm[l];
 bm /: bm[bm[l_]] := bm[l];
 mol /: mol[mol[l_]] := mol[l];
 mal /: mal[mal[l_]] := mal[l];
-mal[modeAssignmentList : {__Integer?Positive}] := mal[modeAssignmentList, FromDigits[IntegerDigits[Max@modeAssignmentList - 1, 2] /. 0 -> 1, 2] + 1];
-(*mol[Except[{__Integer?NonNegative}]]:=Message[mol::wrongFormat]
-mal[args___]/;!MatchQ[{args},{{__Integer?Positive},_Integer?Positive}|{{_Integer?Positive}}]:=Message[mal::wrongFormat]
-mal[listOfModes_List,numberOfModes_Integer]/;Max@listOfModes>numberOfModes:=Message[mal::wrongNumberOfModes]
-bm[Except[{{__Integer?(#\[Equal]0||#\[Equal]1&)}..}]]:=Message[bm::wrongFormat]*)
+
+(*
+mal[mol : {__Integer?Positive}] := mal[mol,
+  FromDigits[IntegerDigits[Max @ mol - 1, 2] /. 0 -> 1, 2] + 1
+];
+
+mal[args___] /; !MatchQ[{args},
+  {{__Integer ? Positive}, _Integer ? Positive} | {{_Integer ? Positive}}
+] := Message[mal::wrongFormat];
+
+mal[listOfModes_List, numberOfModes_Integer] /; (
+  Max @ listOfModes > numberOfModes
+) := Message[mal::wrongNumberOfModes];
+
+mol[Except[{__Integer?NonNegative}]] := Message[mol::wrongFormat];
+
+bm[Except @ {{__Integer ? (# == 0 || # == 1)&}..}] := Message[bm::wrongFormat];
+*)
+
 Attributes[mol] = {Protected};
 Attributes[mal] = {Protected};
 Attributes[bm] = {Protected};
 
 
-nOfPhotons[mol[occupationNumbers_]] := Total@occupationNumbers;
+nOfPhotons[mol[occupationNumbers_]] := Total @ occupationNumbers;
 nOfPhotons[occupationNumbers : {__Integer}] := nOfPhotons@mol@occupationNumbers;
 nOfPhotons[mal[listOfModes_, _]] := Length@listOfModes;
 nOfPhotons[bm[matrix_]] := Length@matrix;
 nOfPhotons[matrix : {{__Integer?(# == 0 || # == 1&)}..}] := nOfPhotons@bm@matrix;
+
+
 nOfModes[mol[occupationNumbers_]] := Length@occupationNumbers;
 nOfModes[occupationNumbers : {__Integer}] := nOfModes@mol@occupationNumbers;
 nOfModes[mal[_, numberOfModes_]] := numberOfModes;
@@ -135,6 +151,7 @@ convertBMtoMAL[inputBinaryMatrix : {{__Integer}..}] := 1 + FromDigits[#, 2]& /@ 
 convertBMtoMOL[inputBinaryMatrix : {{__Integer}..}] := convertMALtoMOL[convertBMtoMAL@inputBinaryMatrix, 2^Length@Transpose@inputBinaryMatrix]
 (*convertBMtoMOL[inputBM_bm]:=convertBMtoMOL[First@inputBM]*)
 
+
 toMAL::wrongHead = "The allowed Heads are List, mol, mal, bm.";
 toBM::wrongHead = "The allowed Heads are List, mol, mal, bm.";
 toMOL::wrongHead = "The allowed Heads are List, mol, mal, bm.";
@@ -161,25 +178,35 @@ toBM[inputState_mal] := bm@convertMALtoBM@inputState;
 toBM[inputState_bm] := inputState;
 toBM[_] := Message[toBM::wrongHead];
 
+
 SyntaxInformation[toSameForm] = {"ArgumentsPatterns" -> {_, _}};
 toSameForm[modelState_?manyBodyStateQ, stateToFormat_?manyBodyStateQ] := Which[
-  modeOccupationListQ@modelState, If[Head@modelState === mol, toMOL@stateToFormat, First@toMOL@stateToFormat],
-  modeAssignmentListQ@modelState, toMAL@stateToFormat,
-  binaryMatrixQ@modelState, If[Head@modelState === bm, toBM@stateToFormat, First@toBM@stateToFormat]
+  modeOccupationListQ @ modelState,
+  If[Head @ modelState === mol,
+    toMOL @ stateToFormat,
+    First @ toMOL @ stateToFormat
+  ],
+  modeAssignmentListQ @ modelState, toMAL @ stateToFormat,
+  binaryMatrixQ @ modelState,
+  If[Head @ modelState === bm,
+    toBM @ stateToFormat,
+    First @ toBM @ stateToFormat
+  ]
 ];
 
 
 SyntaxInformation[listCFMOLs] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 Options[listCFMOLs] = {sortBy -> "default"};
-listCFMOLs[m_Integer, n_Integer, opts : OptionsPattern[]] := Function[output,
-    Which[
-      StringQ@OptionValue@sortBy &&
-          ToLowerCase@OptionValue@sortBy == "default",
-      output,
-      Head[#] === Symbol || Head[#] === Function&@OptionValue@sortBy,
-      SortBy[OptionValue[sortBy]]@output
-    ]
-  ][Permutations@PadRight[ConstantArray[1, n], m]];
+listCFMOLs[m_Integer, n_Integer, OptionsPattern[]] := Function[output,
+  Which[
+    StringQ @ OptionValue @ sortBy &&
+        ToLowerCase @ OptionValue @ sortBy == "default",
+    output,
+    (Head[#] === Symbol || Head[#] === Function)& @ OptionValue @ sortBy,
+    SortBy[OptionValue @ sortBy] @ output
+  ]
+] @ Permutations @ PadRight[ConstantArray[1, n], m];
+
 
 Options[randomCFMOL] = {method -> "default"};
 SyntaxInformation[randomCFMOL] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
@@ -328,82 +355,136 @@ suppressedQ[
 ];
 
 
-Options[suppressedOutputsCount] = {method -> "exact", nSamples -> 1000, outputStates -> "collisionFree", monitor -> False};
-SyntaxInformation[suppressedOutputsCount] = {"ArgumentsPattern", {_, _, _, OptionsPattern[]}};
-suppressedOutputsCount[m_Integer, n_Integer, unitaryEvolution : (_Symbol | _Function), opts : OptionsPattern[]] := Which[
-(* NOT MONITORED, EXACT ALGORITHM *)
-  ToLowerCase@OptionValue@method == "exact" && !TrueQ@OptionValue@monitor,
-  Module[{outputList},
-    Which[
-      ToLowerCase@OptionValue@outputStates == "collisionfree" || ToLowerCase@OptionValue@outputStates == "cf",
-      outputList = listCFMOLs[m, n],
-      ToLowerCase@OptionValue@outputStates == "all",
-      outputList = listMOLs[m, n],
-      ToLowerCase@OptionValue@outputStates == "noncollisionfree" || ToLowerCase@OptionValue@outputStates == "ncf",
-      outputList = Select[listMOLs[m, n], Max[#] > 1&]
-    ];
+Options[suppressedOutputsCount] = {
+  "Method" -> "Exact",
+  "NSamples" -> 1000,
+  "OutputStates" -> "CollisionFree",
+  "Monitor" -> False
+};
+SyntaxInformation[suppressedOutputsCount] = {
+  "ArgumentsPattern", {_, _, _, OptionsPattern[]}
+};
+
+suppressedOutputsCount::wrongMethodOpt = "The value of the option \"Method\" \
+must be either \"Exact\" or \"Approximated\".";
+
+suppressedOutputsCount[args___, opts : OptionsPattern[]] := Which[
+  OptionValue @ "Method" == "Exact",
+  suppressedOutputsCountExact[args,
+    FilterRules[{opts}, Options @ suppressedOutputsCountExact]
+  ],
+  OptionValue @ "Method" == "Approximated",
+  suppressedOutputsCountApproximated[args,
+    FilterRules[{opts}, Options @ suppressedOutputsCountApproximated]
+  ],
+  True,
+  Message[suppressedOutputsCount::wrongMethodOpt];
+];
+
+
+Options[suppressedOutputsCountExact] = {
+  "NSamples" -> 1000,
+  "OutputStates" -> "CollisionFree",
+  "Monitor" -> False
+};
+
+suppressedOutputsCountExact[m_Integer, n_Integer,
+  unitaryEvolution : (_Symbol | _Function), OptionsPattern[]
+] := Module[{outputList},
+  (* Prepare list of output states to check *)
+  Which[
+    Or[
+      ToLowerCase @ OptionValue @ "OutputStates" == "collisionfree",
+      ToLowerCase @ OptionValue @ "OutputStates" == "cf"
+    ],
+    outputList = listCFMOLs[m, n],
+    ToLowerCase@OptionValue @ "OutputStates" == "all",
+    outputList = listMOLs[m, n],
+    Or[
+      ToLowerCase@OptionValue @ "OutputStates" == "noncollisionfree",
+      ToLowerCase@OptionValue@ "OutputStates" == "ncf"
+    ],
+    outputList = Select[listMOLs[m, n], Max @ # > 1&]
+  ];
+
+  Which[
+    !TrueQ @ OptionValue @ monitor,
     Association[
       Function[input, input -> Length@Select[outputList, suppressedQ[input, #, unitaryEvolution]&]] /@
           outputList
-    ]
-  ],
-(* MONITORED, EXACT ALGORITHM *)
-  ToLowerCase@OptionValue@method == "exact" && TrueQ@OptionValue@monitor,
-  Module[{i = 0, startingTime = AbsoluteTime[]}, Monitor[
-    Module[{outputList},
-      Which[
-        ToLowerCase@OptionValue@outputStates == "collisionfree",
-        outputList = listCFMOLs[m, n],
-        ToLowerCase@OptionValue@outputStates == "all",
-        outputList = listMOLs[m, n],
-        ToLowerCase@OptionValue@outputStates == "noncollisionfree",
-        outputList = Select[listMOLs[m, n], Max[#] > 1&]
-      ];
-      AssociationMap[
-        Function[input, i++;Length@Select[outputList, suppressedQ[input, #, unitaryEvolution]&]],
-        outputList
-      ]
     ],
-    Column[{
-      progressBar[i / Binomial[m, n] * 100 // N],
-      Row[{"Started at:", DateString[startingTime, {"Hour", ":", "Minute", ":", "Second"}]}, " "],
-      Row[{"Time of completion:", DateString[startingTime + # / i * Binomial[m, n](*,{"Hour",":","Minute",":","Second"}*)]}, " "],
-      Row[{"Seconds required:", # / i * (Binomial[m, n] - i)}, " "]
-    }]&[(AbsoluteTime[] - startingTime)]
+    (* MONITORED, EXACT ALGORITHM *)
+    TrueQ @ OptionValue @ monitor,
+    Module[{i = 0, startingTime = AbsoluteTime[]},
+      Monitor[
+        AssociationMap[
+          Function[input, i++;Length@Select[outputList, suppressedQ[input, #, unitaryEvolution]&]],
+          outputList
+        ],
+        Column[{
+          progressBar[i / Binomial[m, n] * 100 // N],
+          Row[{"Started at:", DateString[startingTime, {"Hour", ":", "Minute", ":", "Second"}]}, " "],
+          Row[{"Time of completion:", DateString[startingTime + # / i * Binomial[m, n](*,{"Hour",":","Minute",":","Second"}*)]}, " "],
+          Row[{"Seconds required:", # / i * (Binomial[m, n] - i)}, " "]
+        }]& @ (AbsoluteTime[] - startingTime)
+      ]
+    ]
   ]
+];
+
+suppressedOutputsCountExact[inputState_?manyBodyStateQ,
+  unitaryMatrix : (_Symbol | _Function),
+  opts : OptionsPattern[]
+] := Length @ Select[
+  evolveManyBodyState[inputState,
+    unitaryMatrix,
+    Sequence @@ FilterRules[{opts}, Options @ evolveManyBodyState]
   ],
-(* NOT MONITORED, APPROXIMATED ALGORITHM *)
-  ToLowerCase@OptionValue@method == "approximated",
-  AssociationMap[
-    Module[{counter = 0},
-      Do[
-        If[suppressedQ[#, randomCFMOL[m, n], unitaryEvolution], counter++],
-        {OptionValue@nSamples}
-      ];
-      counter / OptionValue@nSamples * 100.
-    ]&,
-    listCFMOLs[m, n]
-  ]
-]
-suppressedOutputsCount[inputState_?manyBodyStateQ, unitaryMatrix : (_Symbol | _Function), opts : OptionsPattern[]] := Which[
-  ToLowerCase@OptionValue@method == "exact",
-  Select[
-    evolveManyBodyState[inputState, unitaryMatrix, Sequence @@ FilterRules[{opts}, Options[evolveManyBodyState]]],
-    Chop@N@# == 0&
-  ] // Length,
-  ToLowerCase@OptionValue@method == "approximated",
-  Module[{counter = 0},
-    Do[
-      If[suppressedQ[inputState, randomCFMOL[nOfModes@inputState, nOfPhotons@inputState], unitaryMatrix], counter++],
-      {OptionValue@nSamples}
-    ];
-    counter / OptionValue@nSamples * 100.
-  ]
-]
-suppressedOutputsCount[inputState_, unitaryMatrix : {{__?NumericQ}..}, opts : OptionsPattern[]] := suppressedOutputsCount[inputState, unitaryMatrix&, opts]
+  Chop @ N @ # == 0 &
+];
+
+suppressedOutputsCountExact[inputState_,
+  unitaryMatrix : {{__?NumericQ}..},
+  opts : OptionsPattern[]
+] := suppressedOutputsCountExact[inputState, unitaryMatrix&, opts];
 (*suppressedOutputsCount[inputMOL_mol,unitaryMatrix:(_Symbol|_Function),opts:OptionsPattern[]]:=suppressedOutputsCount[First@inputMOL,unitaryMatrix,opts]
 suppressedOutputsCount[inputMAL_mal,unitaryMatrix:(_Symbol|_Function),opts:OptionsPattern[]]:=suppressedOutputsCount[toMOL@inputMAL,unitaryMatrix,opts]
 suppressedOutputsCount[inputBM_bm,unitaryMatrix:(_Symbol|_Function),opts:OptionsPattern[]]:=suppressedOutputsCount[toMOL@inputBM,unitaryMatrix,opts]*)
+
+
+Options @ suppressedOutputsCountApproximated = {"NSamples" -> 1000};
+
+suppressedOutputsCountApproximated[inputState_?manyBodyStateQ,
+  unitaryEvolution : (_Symbol | _Function),
+  OptionsPattern[]
+] := Module[{counter = 0},
+  Do[
+    If[suppressedQ[
+        inputState,
+        randomCFMOL[nOfModes @ #, nOfPhotons @ #] & @ inputState,
+        unitaryEvolution
+      ],
+      counter++
+    ],
+    {OptionValue @ "NSamples"}
+  ];
+  counter / OptionValue @ "NSamples"
+];
+
+suppressedOutputsCountApproximated[m_Integer, n_Integer,
+  unitaryEvolution : (_Symbol | _Function),
+  opts : OptionsPattern[]
+] := AssociationMap[
+  suppressedOutputsCountApproximated[#, unitaryEvolution, opts] &,
+  listCFMOLs[m, n]
+];
+
+suppressedOutputsCountApproximated::wrongInputs = "The input must match one of \
+the two following patterns:
+    suppressedOutputsCountApproximated[m, n, unitary]
+    suppressedOutputsCountApproximated[input, unitary]."
+suppressedOutputsCountApproximated[___] := Message @
+  suppressedOutputsCountApproximated::wrongInputs;
 
 
 Options[suppressedOutputsList] = {outputStates -> "collisionFree"};
